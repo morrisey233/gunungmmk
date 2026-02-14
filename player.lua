@@ -60,20 +60,20 @@ player.CharacterAdded:Connect(function(newChar)
 end)
 
 -------------------------------------------------------------------------
--- PRESS NUMBER 5 KEY (NOT NUMPAD)
+-- PRESS NUMBER 1 KEY (NOT NUMPAD)
 -------------------------------------------------------------------------
-local function pressKey5()
-    updateStatus("Activating magicstik (pressing 5)...")
+local function pressKey1()
+    updateStatus("Activating item (pressing 1)...")
     
     local vim = game:GetService("VirtualInputManager")
     
-    -- Press number 5 (KeyCode.Five, not numpad)
-    vim:SendKeyEvent(true, Enum.KeyCode.Five, false, game)
+    -- Press number 1 (KeyCode.One, not numpad)
+    vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
     task.wait(0.1)
-    vim:SendKeyEvent(false, Enum.KeyCode.Five, false, game)
+    vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
     
     task.wait(0.5) -- Wait for activation
-    updateStatus("Magicstik activated!")
+    updateStatus("Item activated!")
 end
 
 -------------------------------------------------------------------------
@@ -241,8 +241,8 @@ end
 -- PLAY ALL CHECKPOINTS (LOOP)
 -------------------------------------------------------------------------
 function playAllCheckpoints()
-    -- Press number 5 to activate magicstik (Initial Start)
-    pressKey5()
+    -- Press number 1 to activate item (Initial Start)
+    pressKey1()
     
     -- Start from nearest checkpoint
     local startIndex = findNearestCheckpoint()
@@ -273,8 +273,8 @@ function playAllCheckpoints()
                     humanoid = newChar:WaitForChild("Humanoid")
                     rootPart = newChar:WaitForChild("HumanoidRootPart")
                     
-                    -- Press number 5 ONLY after respawn
-                    pressKey5()
+                    -- Press number 1 ONLY after respawn
+                    pressKey1()
                     
                     updateStatus("Restarting Loop...")
                     startIndex = 1
