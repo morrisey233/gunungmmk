@@ -11,37 +11,53 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
+local function updateCharacter(newChar)
+    if not newChar then return end
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    rootPart = newChar:WaitForChild("HumanoidRootPart")
+    print("Autowalk: Character Updated")
+end
+
+player.CharacterAdded:Connect(updateCharacter)
+
 print("Autowalk: Character Found")
 
--- State Variables
 local checkpoints = {} 
 local recordingIndex = nil 
 local playingIndex = nil   
 local isPlayingAll = false 
 local recordingConnection
+local interactionConnection
 local playingCoroutine
 local lastJumpTime = 0 
 local showLogs = false 
 
--- Theme Colors (Catppuccin Macchiato inspired)
 local THEME = {
     Background = Color3.fromRGB(30, 30, 46),
     Surface = Color3.fromRGB(49, 50, 68),
-    Primary = Color3.fromRGB(137, 180, 250), -- Blue
-    Success = Color3.fromRGB(166, 227, 161), -- Green
-    Warning = Color3.fromRGB(250, 179, 135), -- Orange
-    Error = Color3.fromRGB(243, 139, 168), -- Red
+    Primary = Color3.fromRGB(137, 180, 250),
+    Success = Color3.fromRGB(166, 227, 161),
+    Warning = Color3.fromRGB(250, 179, 135),
+    Error = Color3.fromRGB(243, 139, 168),
     Text = Color3.fromRGB(205, 214, 244),
     Subtext = Color3.fromRGB(166, 173, 200)
 }
 
--- GUI Setup
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.F5 then
+        if recordingIndex then
+            stopAll()
+            updateStatus("Recording Stopped via F5")
+        end
+    end
+end)
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutowalkRecorderGUI"
-screenGui.IgnoreGuiInset = true -- Ensure it draws over topbar if needed
-screenGui.DisplayOrder = 2000 -- Force on top of everything
+screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 2000
 screenGui.ResetOnSpawn = false 
--- Clean up old GUI if exists to prevent duplicates on reload
 if player:WaitForChild("PlayerGui"):FindFirstChild("AutowalkRecorderGUI") then
     player.PlayerGui.AutowalkRecorderGUI:Destroy()
 end
@@ -49,11 +65,11 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 320, 0, 550) -- Taller to fit stacked footer
+mainFrame.Size = UDim2.new(0, 320, 0, 550)
 mainFrame.Position = UDim2.new(0, 20, 0.5, -275)
 mainFrame.BackgroundColor3 = THEME.Background
 mainFrame.BorderSizePixel = 0
-mainFrame.Visible = true -- Force visible immediately
+mainFrame.Visible = true
 mainFrame.Parent = screenGui
 
 local corner = Instance.new("UICorner")
@@ -65,7 +81,7 @@ stroke.Color = THEME.Surface
 stroke.Thickness = 2
 stroke.Parent = mainFrame
 
--- Header
+
 local headerFrame = Instance.new("Frame")
 headerFrame.Name = "Header"
 headerFrame.Size = UDim2.new(1, 0, 0, 50)
@@ -77,7 +93,7 @@ titleLabel.Name = "Title"
 titleLabel.Size = UDim2.new(1, -20, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ADEN TAYANK ALEYNA" -- User Custom Title
+titleLabel.Text = "ADEN TAYANK ALEYNA" 
 titleLabel.TextColor3 = THEME.Text
 titleLabel.Font = Enum.Font.GothamBlack
 titleLabel.TextSize = 20
@@ -87,7 +103,7 @@ titleLabel.Parent = headerFrame
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "Status"
 statusLabel.Size = UDim2.new(1, -20, 0, 20)
-statusLabel.Position = UDim2.new(0, 15, 0, 35) -- Sub-header
+statusLabel.Position = UDim2.new(0, 15, 0, 35)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "READY TO RECORD"
 statusLabel.TextColor3 = THEME.Subtext
@@ -96,7 +112,6 @@ statusLabel.TextSize = 10
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = headerFrame 
 
--- Jump Indicator (Dot)
 local jumpIndicator = Instance.new("Frame")
 jumpIndicator.Name = "JumpIndicator"
 jumpIndicator.Size = UDim2.new(0, 10, 0, 10)
@@ -107,7 +122,6 @@ jumpIndicator.Parent = headerFrame
 local jiCorner = Instance.new("UICorner"); jiCorner.CornerRadius = UDim.new(1, 0); jiCorner.Parent = jumpIndicator
 local jiStroke = Instance.new("UIStroke"); jiStroke.Color = THEME.Subtext; jiStroke.Thickness = 1; jiStroke.Parent = jumpIndicator
 
--- Tools Area
 local toolsFrame = Instance.new("Frame")
 toolsFrame.Name = "ToolsFrame"
 toolsFrame.Size = UDim2.new(1, -20, 0, 30)
@@ -137,10 +151,9 @@ importBtn.TextColor3 = THEME.Text
 local logBtn = createToolButton("Logs", "LOGS", THEME.Surface, UDim2.new(0.7, 0, 0, 0), UDim2.new(0.3, 0, 1, 0))
 logBtn.TextColor3 = THEME.Text
 
--- List Area
 local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Name = "CheckpointsList"
-scrollFrame.Size = UDim2.new(1, -10, 1, -200) -- Reduced height to make room for taller footer
+scrollFrame.Size = UDim2.new(1, -10, 1, -200)
 scrollFrame.Position = UDim2.new(0, 5, 0, 100)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 4
@@ -155,21 +168,106 @@ listLayout.Padding = UDim.new(0, 8)
 local listPadding = Instance.new("UIPadding")
 listPadding.PaddingLeft = UDim.new(0, 5)
 listPadding.PaddingRight = UDim.new(0, 5)
-listPadding.PaddingBottom = UDim.new(0, 10) -- Extra padding at bottom
+listPadding.PaddingBottom = UDim.new(0, 10)
 listPadding.Parent = scrollFrame
 
--- Footer (Stacked Layout)
 local footerFrame = Instance.new("Frame")
 footerFrame.Name = "Footer"
-footerFrame.Size = UDim2.new(1, -20, 0, 90) -- Taller footer
-footerFrame.Position = UDim2.new(0, 10, 1, -100)
+footerFrame.Size = UDim2.new(1, -20, 0, 155)
+footerFrame.Position = UDim2.new(0, 10, 1, -165)
 footerFrame.BackgroundTransparency = 1
 footerFrame.Parent = mainFrame
 
+local respawnContainer = Instance.new("Frame")
+respawnContainer.Name = "RespawnContainer"
+respawnContainer.Size = UDim2.new(1, 0, 0, 30)
+respawnContainer.Position = UDim2.new(0, 0, 0, 0)
+respawnContainer.BackgroundTransparency = 1
+respawnContainer.Parent = footerFrame
+
+local respawnLabel = Instance.new("TextLabel")
+respawnLabel.Name = "Label"
+respawnLabel.Size = UDim2.new(1, -30, 1, 0)
+respawnLabel.Position = UDim2.new(0, 30, 0, 0)
+respawnLabel.BackgroundTransparency = 1
+respawnLabel.Text = "Auto Respawn on Finish"
+respawnLabel.TextColor3 = THEME.Subtext
+respawnLabel.Font = Enum.Font.GothamMedium
+respawnLabel.TextSize = 14
+respawnLabel.TextXAlignment = Enum.TextXAlignment.Left
+respawnLabel.Parent = respawnContainer
+
+local respawnButton = Instance.new("TextButton")
+respawnButton.Name = "ToggleButton"
+respawnButton.Size = UDim2.new(0, 20, 0, 20)
+respawnButton.Position = UDim2.new(0, 0, 0.5, -10)
+respawnButton.BackgroundColor3 = THEME.Surface
+respawnButton.Text = ""
+respawnButton.AutoButtonColor = false
+respawnButton.Parent = respawnContainer
+
+local rCorner = Instance.new("UICorner"); rCorner.CornerRadius = UDim.new(0, 4); rCorner.Parent = respawnButton
+local rStroke = Instance.new("UIStroke"); rStroke.Color = THEME.Subtext; rStroke.Thickness = 2; rStroke.Parent = respawnButton
+
+respawnButton.MouseButton1Click:Connect(function()
+    isAutoRespawn = not isAutoRespawn
+    if isAutoRespawn then
+        respawnButton.BackgroundColor3 = THEME.Primary
+        rStroke.Color = THEME.Primary
+    else
+        respawnButton.BackgroundColor3 = THEME.Surface
+        rStroke.Color = THEME.Subtext
+    end
+end)
+
+local isLooping = false
+
+local loopContainer = Instance.new("Frame")
+loopContainer.Name = "LoopContainer"
+loopContainer.Size = UDim2.new(1, 0, 0, 30)
+loopContainer.Position = UDim2.new(0, 0, 0, 30)
+loopContainer.BackgroundTransparency = 1
+loopContainer.Parent = footerFrame
+
+local loopLabel = Instance.new("TextLabel")
+loopLabel.Name = "Label"
+loopLabel.Size = UDim2.new(1, -30, 1, 0)
+loopLabel.Position = UDim2.new(0, 30, 0, 0)
+loopLabel.BackgroundTransparency = 1
+loopLabel.Text = "Auto Loop / AFK Mode"
+loopLabel.TextColor3 = THEME.Subtext
+loopLabel.Font = Enum.Font.GothamMedium
+loopLabel.TextSize = 14
+loopLabel.TextXAlignment = Enum.TextXAlignment.Left
+loopLabel.Parent = loopContainer
+
+local loopButton = Instance.new("TextButton")
+loopButton.Name = "ToggleButton"
+loopButton.Size = UDim2.new(0, 20, 0, 20)
+loopButton.Position = UDim2.new(0, 0, 0.5, -10)
+loopButton.BackgroundColor3 = THEME.Surface
+loopButton.Text = ""
+loopButton.AutoButtonColor = false
+loopButton.Parent = loopContainer
+
+local lCorner = Instance.new("UICorner"); lCorner.CornerRadius = UDim.new(0, 4); lCorner.Parent = loopButton
+local lStroke = Instance.new("UIStroke"); lStroke.Color = THEME.Subtext; lStroke.Thickness = 2; lStroke.Parent = loopButton
+
+loopButton.MouseButton1Click:Connect(function()
+    isLooping = not isLooping
+    if isLooping then
+        loopButton.BackgroundColor3 = THEME.Primary
+        lStroke.Color = THEME.Primary
+    else
+        loopButton.BackgroundColor3 = THEME.Surface
+        lStroke.Color = THEME.Subtext
+    end
+end)
+
 local playAllBtn = Instance.new("TextButton")
 playAllBtn.Name = "PlayAllButton"
-playAllBtn.Size = UDim2.new(1, 0, 0, 40) -- Full Width
-playAllBtn.Position = UDim2.new(0, 0, 0, 0) -- Top
+playAllBtn.Size = UDim2.new(1, 0, 0, 40) 
+playAllBtn.Position = UDim2.new(0, 0, 0, 70)
 playAllBtn.BackgroundColor3 = THEME.Success
 playAllBtn.Text = "PLAY ALL CHECKPOINTS"
 playAllBtn.TextColor3 = THEME.Background
@@ -180,8 +278,8 @@ local paCorner = Instance.new("UICorner"); paCorner.CornerRadius = UDim.new(0, 8
 
 local addBtn = Instance.new("TextButton")
 addBtn.Name = "AddButton"
-addBtn.Size = UDim2.new(1, 0, 0, 40) -- Full Width
-addBtn.Position = UDim2.new(0, 0, 0, 50) -- Below Play All (with 10px gap)
+addBtn.Size = UDim2.new(1, 0, 0, 40)
+addBtn.Position = UDim2.new(0, 0, 0, 120)
 addBtn.BackgroundColor3 = THEME.Surface
 addBtn.Text = "+ Add New Checkpoint"
 addBtn.TextColor3 = THEME.Text
@@ -192,20 +290,19 @@ local addCorner = Instance.new("UICorner"); addCorner.CornerRadius = UDim.new(0,
 
 addBtn.MouseButton1Click:Connect(createCheckpoint)
 
--- Log Overlay
 local logOverlay = Instance.new("ScrollingFrame")
 logOverlay.Name = "LogOverlay"
 logOverlay.Size = UDim2.new(1, -20, 0, 150)
-logOverlay.Position = UDim2.new(0, 10, 1, -160) -- Adjust position above footer if needed, or overlay it
+logOverlay.Position = UDim2.new(0, 10, 1, -160)
 logOverlay.BackgroundColor3 = Color3.new(0,0,0)
 logOverlay.BackgroundTransparency = 0.1
 logOverlay.Visible = false
-logOverlay.ZIndex = 30 -- Above everything
+logOverlay.ZIndex = 30
 logOverlay.Parent = mainFrame
 local loCorner = Instance.new("UICorner"); loCorner.Parent = logOverlay
 
 local logLabel = Instance.new("TextLabel")
-logLabel.Size = UDim2.new(1, -10, 0, 0) -- Auto height
+logLabel.Size = UDim2.new(1, -10, 0, 0)
 logLabel.BackgroundTransparency = 1
 logLabel.Text = "System initialized..."
 logLabel.TextColor3 = THEME.Text
@@ -229,7 +326,6 @@ logBtn.MouseButton1Click:Connect(function()
 end)
 
 
--- Data Window (Modal)
 local dataWindow = Instance.new("Frame")
 dataWindow.Name = "DataWindow"
 dataWindow.Size = UDim2.new(1, 0, 1, 0)
@@ -285,7 +381,7 @@ closeDataBtn.ZIndex = 42
 closeDataBtn.Parent = dwContent
 local cdbCorner = Instance.new("UICorner"); cdbCorner.Parent = closeDataBtn
 
-local actionDataBtn = Instance.new("TextButton") -- Copy/Load
+local actionDataBtn = Instance.new("TextButton")
 actionDataBtn.Size = UDim2.new(0.3, 0, 0, 35)
 actionDataBtn.Position = UDim2.new(0.375, 0, 1, -45)
 actionDataBtn.BackgroundColor3 = THEME.Primary
@@ -296,7 +392,7 @@ actionDataBtn.ZIndex = 42
 actionDataBtn.Parent = dwContent
 local adbCorner = Instance.new("UICorner"); adbCorner.Parent = actionDataBtn
 
-local saveDataBtn = Instance.new("TextButton") -- New Save File Button
+local saveDataBtn = Instance.new("TextButton")
 saveDataBtn.Size = UDim2.new(0.25, 0, 0, 35)
 saveDataBtn.Position = UDim2.new(0.7, 0, 1, -45)
 saveDataBtn.BackgroundColor3 = THEME.Warning
@@ -304,17 +400,15 @@ saveDataBtn.Text = "SAVE FILE"
 saveDataBtn.TextColor3 = THEME.Background
 saveDataBtn.Font = Enum.Font.GothamBold
 saveDataBtn.ZIndex = 42
-saveDataBtn.Visible = false -- Hidden by default, shown on Export
+saveDataBtn.Visible = false
 saveDataBtn.Parent = dwContent
 local sdbCorner = Instance.new("UICorner"); sdbCorner.Parent = saveDataBtn
 
 if not writefile then
-    saveDataBtn.Visible = false -- Hide if executor doesn't support file saving
-    actionDataBtn.Size = UDim2.new(0.6, 0, 0, 35) -- Expand action btn
+    saveDataBtn.Visible = false
+    actionDataBtn.Size = UDim2.new(0.6, 0, 0, 35)
     actionDataBtn.Position = UDim2.new(0.375, 0, 1, -45)
 end
-
--- Logic Functions
 
 local function updateStatus(text)
 	statusLabel.Text = string.upper(text)
@@ -342,6 +436,11 @@ local function stopAll(fullStop)
 			recordingConnection:Disconnect()
 			recordingConnection = nil
 		end
+
+        if interactionConnection then
+            interactionConnection:Disconnect()
+            interactionConnection = nil
+        end
         updateStatus("Stopped Recording CP " .. recordingIndex)
 		recordingIndex = nil
 	end
@@ -426,9 +525,8 @@ local function deserializeCheckpoints(jsonString)
     return loadedCheckpoints
 end
 
-local currentExportData = "" -- Store full data here
+local currentExportData = ""
 
--- Executor Support Check
 local canWriteFile = (writefile ~= nil) or (makefolder ~= nil)
 if not canWriteFile and getgenv then
     canWriteFile = (getgenv().writefile ~= nil)
@@ -439,14 +537,12 @@ exportBtn.MouseButton1Click:Connect(function()
     print("Autowalk: Export Button Clicked")
     stopAll()
     
-    -- Show window immediately with feedback
     dwTitle.Text = "EXPORTING..."
     dataTextBox.Text = "Generating JSON data... Please wait."
     dataWindow.Visible = true
     saveDataBtn.Visible = false
     actionDataBtn.Visible = false
     
-    -- Wait a frame to let UI update
     task.wait()
     
     local success, json = pcall(serializeCheckpoints)
@@ -456,7 +552,7 @@ exportBtn.MouseButton1Click:Connect(function()
         return 
     end
     
-    currentExportData = json -- Save full data
+    currentExportData = json
     print("Autowalk: JSON Generated, Length: " .. #json)
     
     if #json > 100000 then
@@ -471,11 +567,11 @@ exportBtn.MouseButton1Click:Connect(function()
     
     if canWriteFile then
         saveDataBtn.Visible = true
-        actionDataBtn.Size = UDim2.new(0.3, 0, 0, 35) -- Smaller to fit SaveBtn
+        actionDataBtn.Size = UDim2.new(0.3, 0, 0, 35)
         actionDataBtn.Position = UDim2.new(0.375, 0, 1, -45)
     else
         saveDataBtn.Visible = false
-        actionDataBtn.Size = UDim2.new(0.55, 0, 0, 35) -- Fill space
+        actionDataBtn.Size = UDim2.new(0.55, 0, 0, 35)
         actionDataBtn.Position = UDim2.new(0.4, 0, 1, -45)
     end
 end)
@@ -486,7 +582,7 @@ importBtn.MouseButton1Click:Connect(function()
     currentExportData = ""
     actionDataBtn.Text = "LOAD"
     actionDataBtn.Visible = true
-    actionDataBtn.Size = UDim2.new(0.55, 0, 0, 35) -- Fill space
+    actionDataBtn.Size = UDim2.new(0.55, 0, 0, 35)
     actionDataBtn.Position = UDim2.new(0.4, 0, 1, -45)
     saveDataBtn.Visible = false
     
@@ -581,6 +677,124 @@ local function recordCheckpoint(index)
         p = rootPart.Position 
     }
     
+    local mouse = player:GetMouse()
+    
+    -- Removed 'local' to use the upvalue defined at top of script
+    interactionConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+             local target = mouse.Target
+             print("Autowalk Debug: Clicked Target: " .. (target and target.Name or "NIL"))
+             
+             local foundInteraction = false
+             
+             if target then
+                 -- CHECK 1: Direct Hit
+                 local cd = target:FindFirstChild("ClickDetector") or target.Parent:FindFirstChild("ClickDetector")
+                 local pp = target:FindFirstChild("ProximityPrompt") or target.Parent:FindFirstChild("ProximityPrompt")
+                 
+                 if cd then
+                     print("Autowalk Debug: Found ClickDetector on " .. target.Name)
+                     updateStatus("Recorded Click: " .. target.Name)
+                     table.insert(checkpoints[index].inputs, {
+                         dt = 0.1, d = Vector3.zero, j = false, p = rootPart.Position,
+                         interaction = { type = "ClickDetector", targetName = target.Name }
+                     })
+                     foundInteraction = true
+                 elseif pp then
+                     print("Autowalk Debug: Found ProximityPrompt on " .. target.Name)
+                     updateStatus("Recorded Prompt: " .. target.Name)
+                     table.insert(checkpoints[index].inputs, {
+                         dt = 0.1, d = Vector3.zero, j = false, p = rootPart.Position,
+                         interaction = { type = "ProximityPrompt", targetName = target.Name }
+                     })
+                     foundInteraction = true
+                 end
+             end
+             
+             -- CHECK 2: Scan Nearby (Fallback if direct hit failed)
+             if not foundInteraction then
+                 print("Autowalk Debug: Direct Hit Failed/Terrain. Scanning Nearby (15 studs)...")
+                 local r = 15
+                 local region = Region3.new(rootPart.Position - Vector3.new(r,r,r), rootPart.Position + Vector3.new(r,r,r))
+                 local parts = workspace:FindPartsInRegion3(region, nil, 100)
+                 
+                 for _, part in ipairs(parts) do
+                     local cd = part:FindFirstChild("ClickDetector") or part.Parent:FindFirstChild("ClickDetector")
+                     local pp = part:FindFirstChild("ProximityPrompt") or part.Parent:FindFirstChild("ProximityPrompt")
+                     
+                     if cd then
+                         print("Autowalk Debug: Found Nearby ClickDetector on " .. part.Name)
+                         updateStatus("Auto-Recorded Nearby Click: " .. part.Name)
+                         table.insert(checkpoints[index].inputs, {
+                             dt = 0.1, d = Vector3.zero, j = false, p = rootPart.Position,
+                             interaction = { type = "ClickDetector", targetName = part.Name }
+                         })
+                         foundInteraction = true
+                         break
+                     elseif pp then
+                         print("Autowalk Debug: Found Nearby ProximityPrompt on " .. part.Name)
+                         updateStatus("Auto-Recorded Nearby Prompt: " .. part.Name)
+                         table.insert(checkpoints[index].inputs, {
+                             dt = 0.1, d = Vector3.zero, j = false, p = rootPart.Position,
+                             interaction = { type = "ProximityPrompt", targetName = part.Name }
+                         })
+                         foundInteraction = true
+                         break
+                     end
+                 end
+                 
+                 if not foundInteraction then
+                     print("Autowalk Debug: No Interaction Component Found ANYWHERE nearby")
+                     
+                     -- CHECK 3: Smart UI Button Detection
+                     -- Try to find the button under the mouse in PlayerGui
+                     local pGui = player:WaitForChild("PlayerGui")
+                     local guiObjects = pGui:GetGuiObjectsAtPosition(mouse.X, mouse.Y)
+                     
+                     -- Also check CoreGui? Maybe not safe/allowed depending on context. sticking to PlayerGui.
+                     
+                     for _, guiObj in ipairs(guiObjects) do
+                         if guiObj:IsA("TextButton") or guiObj:IsA("ImageButton") then
+                             print("Autowalk Debug: Found UI Button: " .. guiObj.Name)
+                             updateStatus("Recorded UI Button: " .. guiObj.Name)
+                             
+                             -- Store hierarchy path for re-finding
+                             local pathTable = {}
+                             local current = guiObj
+                             while current and current ~= pGui and current ~= game do
+                                 table.insert(pathTable, 1, current.Name)
+                                 current = current.Parent
+                             end
+                             
+                             table.insert(checkpoints[index].inputs, {
+                                 dt = 0.1, d = Vector3.zero, j = false, p = rootPart.Position,
+                                 interaction = { 
+                                     type = "GuiButton", 
+                                     targetName = guiObj.Name,
+                                     path = pathTable 
+                                 }
+                             })
+                             foundInteraction = true
+                             break
+                         end
+                     end
+                     
+                     if not foundInteraction then
+                         -- CHECK 4: Screen Click (Last Resort Fallback)
+                         print("Autowalk Debug: No Button Found. Recording Screen Click at " .. mouse.X .. ", " .. mouse.Y)
+                         updateStatus("Recorded Area Click at " .. mouse.X .. ", " .. mouse.Y)
+                         
+                         table.insert(checkpoints[index].inputs, {
+                             dt = 0.1, d = Vector3.zero, j = false, p = rootPart.Position,
+                             interaction = { type = "ScreenClick", x = mouse.X, y = mouse.Y, targetName = "Screen_Click" }
+                         })
+                         foundInteraction = true
+                     end
+                 end
+             end
+        end
+    end)
+    
     recordingConnection = RunService.Heartbeat:Connect(function() 
         if not character or not rootPart then return end
         
@@ -669,6 +883,136 @@ playCheckpoint = function(index)
                     end
                 end
                 
+                -- INTERACTION REPLAY Logic
+                if inp.interaction then
+                    print("Autowalk Debug: Replaying Interaction for " .. (inp.interaction.targetName or "Unknown"))
+                    local targetObj = nil
+                    pcall(function()
+                        local r = 20 -- Increased Radius
+                        local region = Region3.new(rootPart.Position - Vector3.new(r,r,r), rootPart.Position + Vector3.new(r,r,r))
+                        local parts = workspace:FindPartsInRegion3(region, nil, 100)
+                        for _, part in ipairs(parts) do
+                            if part.Name == inp.interaction.targetName then
+                                if inp.interaction.type == "ClickDetector" and (part:FindFirstChild("ClickDetector") or part.Parent:FindFirstChild("ClickDetector")) then
+                                    targetObj = part:FindFirstChild("ClickDetector") or part.Parent:FindFirstChild("ClickDetector")
+                                    break
+                                elseif inp.interaction.type == "ProximityPrompt" and (part:FindFirstChild("ProximityPrompt") or part.Parent:FindFirstChild("ProximityPrompt")) then
+                                    targetObj = part:FindFirstChild("ProximityPrompt") or part.Parent:FindFirstChild("ProximityPrompt")
+                                    break
+                                end
+                            end
+                        end
+                    end)
+                    
+                    if targetObj then
+                        print("Autowalk Debug: Found Object! Parent: " .. targetObj.Parent.Name)
+                        updateStatus("Interacting with " .. targetObj.Parent.Name .. "...")
+                        
+                        if inp.interaction.type == "ClickDetector" then
+                            if fireclickdetector then 
+                                print("Autowalk Debug: Firing via fireclickdetector...")
+                                fireclickdetector(targetObj) 
+                            else
+                                print("Autowalk Debug: fireclickdetector missing! Trying VirtualInputManager...")
+                                -- Fallback: Virtual Input
+                                local vim = game:GetService("VirtualInputManager")
+                                vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                                task.wait(0.05)
+                                vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                            end
+                        elseif inp.interaction.type == "ProximityPrompt" then
+                            if fireproximityprompt then 
+                                print("Autowalk Debug: Firing via fireproximityprompt...")
+                                fireproximityprompt(targetObj) 
+                            end
+                        end
+                        task.wait(0.5) 
+                    else
+                        -- Fallback for UI Interaction (Smart Button & Screen Click)
+                        if inp.interaction.type == "GuiButton" then
+                             print("Autowalk Debug: Searching for UI Button: " .. inp.interaction.targetName)
+                             
+                             local pGui = player:WaitForChild("PlayerGui")
+                             local targetButton = nil
+                             
+                             -- Helper: Recursive Search by Name
+                             local function findButtonByName(parent, name)
+                                 for _, child in ipairs(parent:GetDescendants()) do
+                                     if child.Name == name and (child:IsA("GuiButton") or child:IsA("ImageButton")) then
+                                         return child
+                                     end
+                                 end
+                                 return nil
+                             end
+                             
+                             targetButton = findButtonByName(pGui, inp.interaction.targetName)
+                             
+                             if targetButton then
+                                 print("Autowalk Debug: Found Button via Global Search! " .. targetButton:GetFullName())
+                                 updateStatus("Clicking Button: " .. targetButton.Name)
+                                 
+                                 -- Try firesignal first (Best for exploits)
+                                 local fired = false
+                                 if firesignal then
+                                     pcall(function()
+                                         print("Autowalk Debug: Attempting firesignal(MouseButton1Click)...")
+                                         firesignal(targetButton.MouseButton1Click)
+                                         fired = true
+                                     end)
+                                 end
+                                 
+                                 -- Try getconnections (Common exploit method)
+                                 if not fired and getconnections then
+                                     pcall(function()
+                                         print("Autowalk Debug: Attempting getconnections(MouseButton1Click)...")
+                                         for _, conn in ipairs(getconnections(targetButton.MouseButton1Click)) do
+                                             conn:Fire()
+                                             fired = true
+                                         end
+                                         print("Autowalk Debug: Attempting getconnections(Activated)...")
+                                         for _, conn in ipairs(getconnections(targetButton.Activated)) do
+                                             conn:Fire()
+                                             fired = true
+                                         end
+                                     end)
+                                 end
+                                 
+                                 if not fired then
+                                     -- Fallback: VirtualInputManager (Simulated Click)
+                                     print("Autowalk Debug: Attempting VirtualInputManager Click...")
+                                     local absPos = targetButton.AbsolutePosition
+                                     local absSize = targetButton.AbsoluteSize
+                                     local centerX = absPos.X + (absSize.X / 2)
+                                     local centerY = absPos.Y + (absSize.Y / 2)
+                                     
+                                     local vim = game:GetService("VirtualInputManager")
+                                     vim:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+                                     task.wait(0.05)
+                                     vim:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+                                 end
+                                 
+                                 task.wait(0.5)
+                             else
+                                 print("Autowalk Debug: UI Button NOT FOUND anywhere in PlayerGui.")
+                                 updateStatus("Button Not Found: " .. inp.interaction.targetName)
+                             end
+                             
+                        elseif inp.interaction.type == "ScreenClick" then
+                            print("Autowalk Debug: Replaying Screen Click at " .. inp.interaction.x .. ", " .. inp.interaction.y)
+                            updateStatus("Clicking Screen at " .. inp.interaction.x .. ", " .. inp.interaction.y)
+                            
+                            local vim = game:GetService("VirtualInputManager")
+                            vim:SendMouseButtonEvent(inp.interaction.x, inp.interaction.y, 0, true, game, 0)
+                            task.wait(0.05)
+                            vim:SendMouseButtonEvent(inp.interaction.x, inp.interaction.y, 0, false, game, 0)
+                            task.wait(0.5)
+                        else
+                            print("Autowalk Debug: Target Interaction Object NOT FOUND nearby!")
+                            updateStatus("Interaction Target Not Found: " .. (inp.interaction.targetName or "?"))
+                        end
+                    end
+                end
+                
                 local startTime = tick()
                 local duration = inp.dt
                 
@@ -700,16 +1044,51 @@ playCheckpoint = function(index)
                 updateStatus("Finished CP " .. index .. ". Next...")
                 task.delay(0.1, function() playCheckpoint(index + 1) end)
             else
-                updateStatus("Finished CP " .. index)
+                if isAutoRespawn then
+                    print("Autowalk Debug: Auto Respawn Enabled. Triggering in 2s...")
+                    updateStatus("Auto Respawning in 2s...")
+                    local char = player.Character
+                    if char then
+                        local hum = char:FindFirstChild("Humanoid")
+                        if hum then hum.Health = 0 end
+                    end
+                    
+                    if isLooping then
+                        updateStatus("Waiting for Respawn (Looping)...")
+                        local newChar = player.CharacterAdded:Wait()
+                        updateStatus("Character Respawned. Waiting 3s...")
+                        task.wait(3) -- Wait for load (animate, physics settle)
+                        
+                        -- Explicitly refresh character variables
+                        character = newChar
+                        humanoid = newChar:WaitForChild("Humanoid")
+                        rootPart = newChar:WaitForChild("HumanoidRootPart")
+                        print("Autowalk Debug: Character Variables Refreshed for Loop")
+                        
+                        updateStatus("Restarting Loop...")
+                        playAllCheckpoints()
+                        return -- Prevent stopAll
+                    end
+                elseif isLooping then
+                    -- Loop without Respawn (just teleport back to start effectively)
+                    updateStatus("Looping in 1s...")
+                    task.wait(1)
+                    playAllCheckpoints()
+                    return -- Prevent stopAll
+                end
+                
                 stopAll() 
             end
         end
     end)
 end
 
-playAllBtn.MouseButton1Click:Connect(function()
+-- Define as a named function for recursion
+function playAllCheckpoints()
     if isPlayingAll then
         stopAll()
+        playAllBtn.Text = "PLAY ALL CHECKPOINTS"
+        playAllBtn.BackgroundColor3 = THEME.Success
     else
         stopAll()
         if #checkpoints == 0 then return end
@@ -718,7 +1097,9 @@ playAllBtn.MouseButton1Click:Connect(function()
         playAllBtn.BackgroundColor3 = THEME.Error
         playCheckpoint(1)
     end
-end)
+end
+
+playAllBtn.MouseButton1Click:Connect(playAllCheckpoints)
 
 local function deleteCheckpoint(index)
     stopAll()
