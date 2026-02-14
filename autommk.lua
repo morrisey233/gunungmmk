@@ -47,15 +47,6 @@ if player:WaitForChild("PlayerGui"):FindFirstChild("AutowalkRecorderGUI") then
 end
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- DEBUG: Visual Anchor to confirm GUI exists
-local debugDot = Instance.new("Frame")
-debugDot.Name = "DebugAnchor"
-debugDot.Size = UDim2.new(0, 10, 0, 10)
-debugDot.Position = UDim2.new(0, 0, 0, 0) -- Top Left
-debugDot.BackgroundColor3 = Color3.new(1, 0, 0) -- Red
-debugDot.Parent = screenGui
--- 
-
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 320, 0, 550) -- Taller to fit stacked footer
@@ -86,7 +77,7 @@ titleLabel.Name = "Title"
 titleLabel.Size = UDim2.new(1, -20, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ADEN TAYANK ALEYNA"
+titleLabel.Text = "ADEN TAYANK ALEYNA" -- User Custom Title
 titleLabel.TextColor3 = THEME.Text
 titleLabel.Font = Enum.Font.GothamBlack
 titleLabel.TextSize = 20
@@ -199,6 +190,7 @@ addBtn.TextSize = 14
 addBtn.Parent = footerFrame
 local addCorner = Instance.new("UICorner"); addCorner.CornerRadius = UDim.new(0, 8); addCorner.Parent = addBtn
 
+addBtn.MouseButton1Click:Connect(createCheckpoint)
 
 -- Log Overlay
 local logOverlay = Instance.new("ScrollingFrame")
@@ -283,7 +275,7 @@ dataTextBox.Parent = dwContent
 local dtbCorner = Instance.new("UICorner"); dtbCorner.Parent = dataTextBox
 
 local closeDataBtn = Instance.new("TextButton")
-closeDataBtn.Size = UDim2.new(0.4, 0, 0, 35)
+closeDataBtn.Size = UDim2.new(0.3, 0, 0, 35)
 closeDataBtn.Position = UDim2.new(0.05, 0, 1, -45)
 closeDataBtn.BackgroundColor3 = THEME.Error
 closeDataBtn.Text = "CLOSE"
@@ -293,9 +285,9 @@ closeDataBtn.ZIndex = 42
 closeDataBtn.Parent = dwContent
 local cdbCorner = Instance.new("UICorner"); cdbCorner.Parent = closeDataBtn
 
-local actionDataBtn = Instance.new("TextButton")
-actionDataBtn.Size = UDim2.new(0.4, 0, 0, 35)
-actionDataBtn.Position = UDim2.new(0.55, 0, 1, -45)
+local actionDataBtn = Instance.new("TextButton") -- Copy/Load
+actionDataBtn.Size = UDim2.new(0.3, 0, 0, 35)
+actionDataBtn.Position = UDim2.new(0.375, 0, 1, -45)
 actionDataBtn.BackgroundColor3 = THEME.Primary
 actionDataBtn.Text = "ACTION"
 actionDataBtn.TextColor3 = THEME.Background
@@ -303,6 +295,24 @@ actionDataBtn.Font = Enum.Font.GothamBold
 actionDataBtn.ZIndex = 42
 actionDataBtn.Parent = dwContent
 local adbCorner = Instance.new("UICorner"); adbCorner.Parent = actionDataBtn
+
+local saveDataBtn = Instance.new("TextButton") -- New Save File Button
+saveDataBtn.Size = UDim2.new(0.25, 0, 0, 35)
+saveDataBtn.Position = UDim2.new(0.7, 0, 1, -45)
+saveDataBtn.BackgroundColor3 = THEME.Warning
+saveDataBtn.Text = "SAVE FILE"
+saveDataBtn.TextColor3 = THEME.Background
+saveDataBtn.Font = Enum.Font.GothamBold
+saveDataBtn.ZIndex = 42
+saveDataBtn.Visible = false -- Hidden by default, shown on Export
+saveDataBtn.Parent = dwContent
+local sdbCorner = Instance.new("UICorner"); sdbCorner.Parent = saveDataBtn
+
+if not writefile then
+    saveDataBtn.Visible = false -- Hide if executor doesn't support file saving
+    actionDataBtn.Size = UDim2.new(0.6, 0, 0, 35) -- Expand action btn
+    actionDataBtn.Position = UDim2.new(0.375, 0, 1, -45)
+end
 
 -- Logic Functions
 
@@ -387,7 +397,7 @@ local function deserializeCheckpoints(jsonString)
     end)
     
     if not success then 
-        logError("JSON Decode Failed")
+        logError("JSON Decode Failed: " .. tostring(result))
         return nil 
     end
     
@@ -416,23 +426,70 @@ local function deserializeCheckpoints(jsonString)
     return loadedCheckpoints
 end
 
+local currentExportData = "" -- Store full data here
+
+-- Executor Support Check
+local canWriteFile = (writefile ~= nil) or (makefolder ~= nil)
+if not canWriteFile and getgenv then
+    canWriteFile = (getgenv().writefile ~= nil)
+end
+print("Autowalk: Can Write File? " .. tostring(canWriteFile))
+
 exportBtn.MouseButton1Click:Connect(function()
+    print("Autowalk: Export Button Clicked")
     stopAll()
-    local success, json = pcall(serializeCheckpoints)
-    if not success then logError("Serialize: " .. json); return end
     
-    dataTextBox.Text = json
-    actionDataBtn.Text = "COPY"
-    actionDataBtn.Visible = false 
-    dwTitle.Text = "EXPORT DATA"
+    -- Show window immediately with feedback
+    dwTitle.Text = "EXPORTING..."
+    dataTextBox.Text = "Generating JSON data... Please wait."
     dataWindow.Visible = true
+    saveDataBtn.Visible = false
+    actionDataBtn.Visible = false
+    
+    -- Wait a frame to let UI update
+    task.wait()
+    
+    local success, json = pcall(serializeCheckpoints)
+    if not success then 
+        logError("Serialize: " .. json)
+        dataTextBox.Text = "ERROR: " .. tostring(json)
+        return 
+    end
+    
+    currentExportData = json -- Save full data
+    print("Autowalk: JSON Generated, Length: " .. #json)
+    
+    if #json > 100000 then
+        dataTextBox.Text = "-- DATA TOO LONG TO DISPLAY (" .. #json .. " chars) --\n\nPlease use 'SAVE FILE' or 'ACTION -> COPY' buttons to get the full data."
+    else
+        dataTextBox.Text = json
+    end
+    
+    dwTitle.Text = "EXPORT DATA"
+    actionDataBtn.Text = "COPY"
+    actionDataBtn.Visible = true 
+    
+    if canWriteFile then
+        saveDataBtn.Visible = true
+        actionDataBtn.Size = UDim2.new(0.3, 0, 0, 35) -- Smaller to fit SaveBtn
+        actionDataBtn.Position = UDim2.new(0.375, 0, 1, -45)
+    else
+        saveDataBtn.Visible = false
+        actionDataBtn.Size = UDim2.new(0.55, 0, 0, 35) -- Fill space
+        actionDataBtn.Position = UDim2.new(0.4, 0, 1, -45)
+    end
 end)
 
 importBtn.MouseButton1Click:Connect(function()
     stopAll()
     dataTextBox.Text = ""
+    currentExportData = ""
     actionDataBtn.Text = "LOAD"
     actionDataBtn.Visible = true
+    actionDataBtn.Size = UDim2.new(0.55, 0, 0, 35) -- Fill space
+    actionDataBtn.Position = UDim2.new(0.4, 0, 1, -45)
+    saveDataBtn.Visible = false
+    
     dwTitle.Text = "IMPORT DATA"
     dataWindow.Visible = true
 end)
@@ -453,7 +510,48 @@ actionDataBtn.MouseButton1Click:Connect(function()
             dataWindow.Visible = false
             updateStatus("Data Loaded Successfully")
         else
-            dataTextBox.Text = "ERROR: Invalid Data"
+            dataTextBox.Text = "ERROR: See Log"
+        end
+    elseif actionDataBtn.Text == "COPY" then
+        local dataToCopy = (#currentExportData > 0) and currentExportData or dataTextBox.Text
+        if setclipboard then
+            setclipboard(dataToCopy)
+            updateStatus("Data Copied to Clipboard")
+            dataWindow.Visible = false
+        elseif toclipboard then
+             toclipboard(dataToCopy)
+             updateStatus("Data Copied to Clipboard")
+             dataWindow.Visible = false
+        else
+            if #dataToCopy > 100000 then
+                dataTextBox.Text = "ERROR: Text too long to copy manually! Use Executor with setclipboard or writefile."
+            else
+                dataTextBox.Text = "Select All -> Ctrl+C manually"
+            end
+        end
+    end
+end)
+
+saveDataBtn.MouseButton1Click:Connect(function()
+    if canWriteFile then
+        local dataToSave = (#currentExportData > 0) and currentExportData or dataTextBox.Text
+        
+        -- Try multiple writefile functions just in case
+        local wf = writefile or (getgenv and getgenv().writefile)
+        
+        if wf then
+            local success, err = pcall(function()
+                wf("autowalk_data.json", dataToSave)
+            end)
+            if success then
+                updateStatus("Saved to: autowalk_data.json")
+                dataWindow.Visible = false
+            else
+                logError("Writefile: " .. tostring(err))
+                dataTextBox.Text = "Error Saving File: " .. tostring(err)
+            end
+        else
+             dataTextBox.Text = "Error: writefile function not found!"
         end
     end
 end)
