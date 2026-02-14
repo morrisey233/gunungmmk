@@ -3,7 +3,7 @@
     Created by: IO/Antigravity
     
     INSTRUCTIONS:
-    1. Put your recording data in: data/recordings.lua
+    1. Put your recording data in: recordings.lua
     2. Execute this script in-game
     3. Press F5 to stop
 ]]
@@ -11,7 +11,7 @@
 -------------------------------------------------------------------------
 -- LOAD RECORDING DATA
 -------------------------------------------------------------------------
-local RECORDING_DATA = loadfile("data/recordings.lua")()
+local RECORDING_DATA = loadfile("recordings.lua")()
 
 -------------------------------------------------------------------------
 -- JSON PARSER
@@ -178,5 +178,5 @@ if RECORDING_DATA and RECORDING_DATA ~= "" and RECORDING_DATA:find("%[") then
         updateStatus("Error: Invalid Data.")
     end
 else
-    updateStatus("Error: No recording data found in data/recordings.lua")
+    updateStatus("Error: No recording data found in recordings.lua")
 end
