@@ -464,30 +464,44 @@ local function stopAll(fullStop)
     refreshList() 
 end
 
+local function round(num)
+    return math.floor(num * 1000 + 0.5) / 1000
+end
+
 local function serializeCheckpoints()
-    local data = {}
+    -- Manual JSON construction for maximum minification & precision control
+    local parts = {"["}
     for i, cp in ipairs(checkpoints) do
-        local cpData = { name = cp.name, startPos = nil, inputs = {} }
-        if cp.startPos then
-             cpData.startPos = {math.floor(cp.startPos.X*100)/100, math.floor(cp.startPos.Y*100)/100, math.floor(cp.startPos.Z*100)/100}
-        end
+        if i > 1 then table.insert(parts, ",") end
+        table.insert(parts, '{"name":"' .. cp.name .. '","inputs":[')
         
-        for _, inp in ipairs(cp.inputs) do
-            local posData = nil
+        for j, inp in ipairs(cp.inputs) do
+            if j > 1 then table.insert(parts, ",") end
+            
+            -- Format: {"dt":0.1,"d":[x,0,z],"j":true/false,"p":[x,y,z]}
+            local dStr = string.format("[%.3g,0,%.3g]", inp.d.X, inp.d.Z)
+            local pStr = "null"
             if inp.p then
-                posData = {math.floor(inp.p.X*100)/100, math.floor(inp.p.Y*100)/100, math.floor(inp.p.Z*100)/100}
+                pStr = string.format("[%.3g,%.3g,%.3g]", inp.p.X, inp.p.Y, inp.p.Z)
             end
             
-            table.insert(cpData.inputs, {
-                dt = math.floor(inp.dt*1000)/1000, 
-                d = {math.floor(inp.d.X*1000)/1000, 0, math.floor(inp.d.Z*1000)/1000},
-                j = inp.j,
-                p = posData
-            })
+            -- Optimized Object String
+            local obj = string.format('{"dt":%.3g,"d":%s,"j":%s', round(inp.dt), dStr, tostring(inp.j))
+            if inp.p then obj = obj .. ',"p":' .. pStr end
+            if inp.interaction then
+                 -- Clean interaction data
+                 local iType = inp.interaction.type or "TextButton"
+                 local iName = inp.interaction.targetName or "?"
+                 local iPath = inp.interaction.path or ""
+                 obj = obj .. string.format(',"i":{"t":"%s","n":"%s","p":"%s"}', iType, iName, iPath)
+            end
+            obj = obj .. "}"
+            table.insert(parts, obj)
         end
-        table.insert(data, cpData)
+        table.insert(parts, "]}")
     end
-    return HttpService:JSONEncode(data)
+    table.insert(parts, "]")
+    return table.concat(parts)
 end
 
 local function deserializeCheckpoints(jsonString)
@@ -610,20 +624,34 @@ actionDataBtn.MouseButton1Click:Connect(function()
         end
     elseif actionDataBtn.Text == "COPY" then
         local dataToCopy = (#currentExportData > 0) and currentExportData or dataTextBox.Text
-        if setclipboard then
-            setclipboard(dataToCopy)
+        
+        -- Safe Clipboard Logic
+        local copyFunc = setclipboard or toclipboard or (stored_env and stored_env.setclipboard) or (stored_env and stored_env.toclipboard)
+        local success = false
+        
+        if copyFunc then
+            local s, err = pcall(function()
+                copyFunc(dataToCopy)
+            end)
+            if s then success = true end
+        end
+        
+        if success then
             updateStatus("Data Copied to Clipboard")
-            dataWindow.Visible = false
-        elseif toclipboard then
-             toclipboard(dataToCopy)
-             updateStatus("Data Copied to Clipboard")
-             dataWindow.Visible = false
+            local oldText = actionDataBtn.Text
+            actionDataBtn.Text = "COPIED!"
+            task.delay(1, function() actionDataBtn.Text = oldText end)
         else
-            if #dataToCopy > 100000 then
-                dataTextBox.Text = "ERROR: Text too long to copy manually! Use Executor with setclipboard or writefile."
-            else
-                dataTextBox.Text = "Select All -> Ctrl+C manually"
+            -- Fallback
+            if dataToCopy ~= dataTextBox.Text then
+                if #dataToCopy > 100000 then
+                    dataTextBox.Text = "Data too long for display. Please use an Executor with setclipboard support."
+                else
+                    dataTextBox.Text = dataToCopy
+                end
             end
+            dataTextBox:CaptureFocus()
+            updateStatus("Clipboard Failed - Manual Copy Required")
         end
     end
 end)
